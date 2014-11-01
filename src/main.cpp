@@ -916,13 +916,14 @@ int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hashBlock);
     if (mi == mapBlockIndex.end())
     {
-        printf("GetDepthInMainChain: cannot find block in mapBlockIndex\n");
+    	if (fDebug)
+    		printf("GetDepthInMainChain: cannot find block in mapBlockIndex\n");
         return 0;
     }
     CBlockIndex* pindex = (*mi).second;
     if (!pindex || !pindex->IsInMainChain())
-    {
-        printf("GetDepthInMainChain: not in main chain\n");
+    {if (fDebug)
+        	printf("GetDepthInMainChain: not in main chain\n");
         return 0;
     }
 
@@ -947,7 +948,8 @@ int CMerkleTx::GetDepthInMainChain(CBlockIndex* &pindexRet) const
         block.ReadFromDisk(pindex);
         block.partialtree.ExtractMatches(vMatchedTxnHash);
         if (std::find(vMatchedTxnHash.begin(), vMatchedTxnHash.end(), GetHash()) == vMatchedTxnHash.end()) {
-            printf("GetDepthInMainChain: CheckMerkleBranch failed!\n");
+        	if (fDebug)
+        		printf("GetDepthInMainChain: CheckMerkleBranch failed!\n");
             return 0;
         }
 
@@ -3381,7 +3383,7 @@ void static ProcessGetData(CNode* pfrom)
     }
 }
 
-void static ProcessFullMerkleBlock(CNode* pfrom, CFullMerkleBlock& fullmerkleblock)
+bool static ProcessFullMerkleBlock(CNode* pfrom, CFullMerkleBlock& fullmerkleblock)
 {
     //process merkleblock, add tx to wallet if is shareaddress
     CBlock partialblock = CBlock(fullmerkleblock.header);
@@ -3396,6 +3398,7 @@ void static ProcessFullMerkleBlock(CNode* pfrom, CFullMerkleBlock& fullmerkleblo
     pfrom->AddInventoryKnown(invlocal);
 
     CValidationState state;
+    bool fRet = false;
 
     {
         LOCK(cs_merkleblockpool);
@@ -3419,6 +3422,7 @@ void static ProcessFullMerkleBlock(CNode* pfrom, CFullMerkleBlock& fullmerkleblo
                 }
                 pfrom->PushGetBlocks(pindexBest, uint256(0));   //get the later blocks again
             }
+            fRet = true;
         }
     }
 
@@ -3427,6 +3431,7 @@ void static ProcessFullMerkleBlock(CNode* pfrom, CFullMerkleBlock& fullmerkleblo
         if (nDoS > 0)
             pfrom->Misbehaving(nDoS);
 
+    return fRet;
     /*
     //if mapAlreadyAskedFor is empty, actively send getblocks to request peers to send inv
     printf("mapAlreadyAskedFor size: %d\n", mapAlreadyAskedFor.size());
@@ -3828,6 +3833,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         //bitfrog: process full blocks in sequence
 //        bool fHaveAtLeastOne = false;
+        std::vector<int> vDelete ;
         while (true)
         {
             bool fHaveFull = false;
@@ -3843,12 +3849,18 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
                     //got a merkleblock filled with all matched txn
                     if (fDebug)
                         printf("  process full merkleblock %s\n", fullmerkleblock->GetHeaderHash().ToString().c_str());
-                    ProcessFullMerkleBlock(pfrom, *fullmerkleblock);
+                    if (!ProcessFullMerkleBlock(pfrom, *fullmerkleblock))
+                    	vDelete.push_back (i);
                     //remove from peer pool
                     //pfrom->vFullMerkleBlock.erase(pfrom->vFullMerkleBlock.begin() + i);
                     break;
                 }
             }
+
+            for (int i = 0; i < vDelete.size(); i++) {
+            	pfrom->vFullMerkleBlock.erase(pfrom->vFullMerkleBlock.begin() + i);
+            }
+            vDelete.clear();
 
             if (!fHaveFull)
                 break;
