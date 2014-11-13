@@ -582,7 +582,7 @@ void ParseParameters(int argc, const char* const argv[])
     }
 
     // bitfrog - force btc is running with tx index
-    mapArgs["-txindex"] = true;
+//    mapArgs["-txindex"] = true;
 }
 
 std::string GetArg(const std::string& strArg, const std::string& strDefault)
